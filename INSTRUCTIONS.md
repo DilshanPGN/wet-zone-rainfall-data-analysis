@@ -1,14 +1,13 @@
 # Data Availability and Trend Analysis Instructions
 
-## 1. Data Availability Status
+## 1. Data Availability Status - missing data
 
 ### 1.1 Maliboda Station
-- **2021** – Data not available  
-  - Action required: **Call to obtain data**
+- **2021** – All Data not available  
 
 ### 1.2 Deniyaya Station
 
-The following table summarizes the available data periods. All other periods are considered missing.
+The following table summarizes the missing data for deniyaya
 
 | Year | Available Periods |
 |------|-------------------|
@@ -23,27 +22,25 @@ The following table summarizes the available data periods. All other periods are
 
 ---
 
-## 2. Data Preprocessing
+## 2. Fill all the missing data using a standerized mathematical way. Write a script for that. it should update excel sheet. but the updated cell should be highlighted with different colour. 
 
-### 2.1 Missing Data Handling
-- Identify and document all missing periods explicitly.
-- Apply suitable techniques to handle missing data before analysis.
+## 3. Data Preprocessing
 
-### 2.2 Homogeneity Test
+### 3.1 Homogeneity Test
 - Perform a **homogeneity test** on the dataset.
-- If inhomogeneity is detected, apply **mean-based adjustment**.
+
 
 ---
 
-## 3. Trend Analysis
+## 4. Trend Analysis
 
-### 3.1 Innovative Trend Analysis (ITA)
+### 4.1 Innovative Trend Analysis (ITA)
 - Conduct **Innovative Trend Analysis (ITA)**.
 - Generate trend charts for visualization.
 - Ensure charts are clearly labeled and publication-ready.
 - Document the code and methodology used.
 
-### 3.2 Mann–Kendall Trend Test
+### 4.2 Mann–Kendall Trend Test
 - Perform the **Mann–Kendall test**.
 - Calculate:
   - Sen’s slope
@@ -52,7 +49,6 @@ The following table summarizes the available data periods. All other periods are
 
 ---
 
-## 4. Reporting Guidelines
-- Clearly state data limitations due to missing periods.
+## 5. Reporting Guidelines
 - Document all assumptions and adjustment methods.
 - Present results using tables and graphs where appropriate.
