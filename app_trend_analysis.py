@@ -22,7 +22,6 @@ from ita import (
     mk_timeseries_plotly,
     get_all_stations_mk,
     mk_all_stations_bar_plotly,
-    mk_all_stations_map_plotly,
 )
 
 # -----------------------------------------------------------------------------
@@ -111,12 +110,12 @@ tab_single, tab_all = st.tabs(["Single station analysis", "Trend by station (all
 
 with tab_single:
     # -----------------------------------------------------------------------------
-    # Run ITA (with filling progress bar while computing)
+    # Run ITA (progress bar while computing — trend can take a moment to appear)
     # -----------------------------------------------------------------------------
     compute_bar = st.progress(0, text=f"Computing trend analysis ({interval})...")
     ita_result = [None]
     ita_error = [None]
-
+    
     def run_ita_thread():
         try:
             ita_result[0] = run_ita(
@@ -124,7 +123,7 @@ with tab_single:
             )
         except Exception as e:
             ita_error[0] = e
-
+    
     thread = threading.Thread(target=run_ita_thread)
     thread.start()
     p = 0
@@ -136,16 +135,16 @@ with tab_single:
     compute_bar.progress(1.0, text="Done.")
     time.sleep(0.2)
     compute_bar.empty()
-
+    
     if ita_error[0] is not None:
         st.error(f"ITA failed: {ita_error[0]}")
         st.stop()
     series_full, first_half_full, second_half_full, summary_full, fig_full = ita_result[0]
-
+    
     if summary_full["n"] == 0:
         st.warning("No data in the selected range. Widen the year range or choose another station.")
         st.stop()
-
+    
     # -----------------------------------------------------------------------------
     # Selection state and interactive time series (drag to select range)
     # -----------------------------------------------------------------------------
@@ -153,7 +152,7 @@ with tab_single:
         st.session_state.ita_selection = None
     if "ita_chart_key" not in st.session_state:
         st.session_state.ita_chart_key = 0
-
+    
     # Plotly time series for box-select (drag to select a range)
     x_ts = list(range(len(series_full)))
     y_ts = series_full.values.tolist()
@@ -177,7 +176,7 @@ with tab_single:
         margin=dict(t=50, b=50),
     )
     fig_plotly.update_xaxes(rangeslider_visible=False)
-
+    
     event = st.plotly_chart(
         fig_plotly,
         key=f"ita_ts_select_{st.session_state.ita_chart_key}",
@@ -185,20 +184,20 @@ with tab_single:
         selection_mode=("box",),
         use_container_width=True,
     )
-
+    
     # Update ita_selection from chart selection (point_indices = time indices)
     if event and getattr(event, "selection", None):
         sel = event.selection
         indices = sel.get("point_indices", []) if isinstance(sel, dict) else getattr(sel, "point_indices", [])
         if indices:
             st.session_state.ita_selection = (min(indices), max(indices))
-
+    
     # Reset button (new chart key clears the drawn box on the Plotly chart)
     if st.button("Reset to full range", type="secondary"):
         st.session_state.ita_selection = None
         st.session_state.ita_chart_key = (st.session_state.ita_chart_key + 1) % 10000
         st.rerun()
-
+    
     # Use subset or full results
     if st.session_state.ita_selection is not None:
         start_idx, end_idx = st.session_state.ita_selection
@@ -216,16 +215,16 @@ with tab_single:
             st.warning("Selected range too short (need ≥2 points). Showing full range.")
     else:
         series, first_half, second_half, summary, fig = series_full, first_half_full, second_half_full, summary_full, fig_full
-
+    
     # -----------------------------------------------------------------------------
     # Main: chart and metrics
     # -----------------------------------------------------------------------------
     st.subheader("Results (full range or selected range)")
     col_chart, col_metrics = st.columns([2, 1])
-
+    
     with col_chart:
         st.pyplot(fig)
-
+    
     with col_metrics:
         st.metric("Points (half-series)", summary["n"])
         st.metric("% above 1:1 line (increase)", f"{summary['pct_above']:.1f}%")
@@ -235,7 +234,7 @@ with tab_single:
         if slope is not None:
             unit = "mm/year" if interval == "annual" else ("mm/day" if interval == "daily" else "mm/step")
             st.metric("Sen's slope", f"{slope:.2f} {unit}")
-
+    
     # -----------------------------------------------------------------------------
     # Mann–Kendall trend test
     # -----------------------------------------------------------------------------
@@ -258,7 +257,7 @@ with tab_single:
         st.success(f"**Statistically significant** at α = 0.05: {mk_result.get('trend_direction', '')}.")
     elif mk_result.get("p") is not None:
         st.caption("Not significant at α = 0.05 (p ≥ 0.05).")
-
+    
     # -----------------------------------------------------------------------------
     # Mann–Kendall trend chart (time series + trend line, like reference image)
     # -----------------------------------------------------------------------------
@@ -283,7 +282,7 @@ with tab_single:
     )
     if fig_mk_ts is not None:
         st.plotly_chart(fig_mk_ts, use_container_width=True)
-
+    
     # -----------------------------------------------------------------------------
     # AI Analysis section (rule-based interpretation)
     # -----------------------------------------------------------------------------
@@ -292,7 +291,7 @@ with tab_single:
     pct_above = summary["pct_above"]
     pct_below = summary["pct_below"]
     mean_change = summary["mean_change"]
-
+    
     if pct_above > 55:
         trend_ita = "increasing"
         reason = f"Most points ({pct_above:.0f}%) lie above the 1:1 line: second-half values are higher than first-half."
@@ -302,14 +301,14 @@ with tab_single:
     else:
         trend_ita = "no clear trend or mixed"
         reason = f"Points are roughly balanced above ({pct_above:.0f}%) and below ({pct_below:.0f}%) the 1:1 line."
-
+    
     if slope > 0.5:
         trend_sen = "positive (increasing over time)"
     elif slope < -0.5:
         trend_sen = "negative (decreasing over time)"
     else:
         trend_sen = "near zero (stable)"
-
+    
     unit_slope = "mm/year" if interval == "annual" else ("mm/day" if interval == "daily" else "mm/step")
     range_desc = f"indices {st.session_state.ita_selection[0]}–{st.session_state.ita_selection[1]}" if st.session_state.ita_selection else f"{year_min}–{year_max}"
     mk_trend = mk_result.get("trend") or "no trend"
@@ -317,30 +316,30 @@ with tab_single:
     mk_sig = "significant" if mk_result.get("significant") else "not significant"
     mk_line = f"Mann–Kendall: **{mk_trend}** (p = {mk_p:.4f}); trend is **{mk_sig}** at α = 0.05." if mk_p is not None else "Mann–Kendall: not computed (insufficient data or package missing)."
     interpretation = f"""
-**ITA interpretation:** {trend_ita.capitalize()}. {reason}
-
-**Sen's slope:** {trend_sen} (slope ≈ {slope:.2f} {unit_slope}).  
-**Mean change** between first and second half: {mean_change:.2f} mm.
-
-**Mann–Kendall:** {mk_line}
-
-**Conclusion:** For **{station}** ({range_desc}, {interval} scale), the series shows a **{trend_ita}** pattern. The Mann–Kendall test indicates the trend is **{mk_sig}**.
-"""
+    **ITA interpretation:** {trend_ita.capitalize()}. {reason}
+    
+    **Sen's slope:** {trend_sen} (slope ≈ {slope:.2f} {unit_slope}).  
+    **Mean change** between first and second half: {mean_change:.2f} mm.
+    
+    **Mann–Kendall:** {mk_line}
+    
+    **Conclusion:** For **{station}** ({range_desc}, {interval} scale), the series shows a **{trend_ita}** pattern. The Mann–Kendall test indicates the trend is **{mk_sig}**.
+    """
     st.markdown(interpretation)
-
+    
     # -----------------------------------------------------------------------------
     # Export: PNG / PDF
     # -----------------------------------------------------------------------------
     st.divider()
     st.subheader("Export chart")
-
+    
     buf_png = BytesIO()
     buf_pdf = BytesIO()
     fig.savefig(buf_png, format="png", dpi=150, bbox_inches="tight")
     fig.savefig(buf_pdf, format="pdf", bbox_inches="tight")
     png_bytes = buf_png.getvalue()
     pdf_bytes = buf_pdf.getvalue()
-
+    
     suffix = f"_selected_{st.session_state.ita_selection[0]}_{st.session_state.ita_selection[1]}" if st.session_state.ita_selection else ""
     col_png, col_pdf, _ = st.columns(3)
     with col_png:
@@ -357,7 +356,7 @@ with tab_single:
             file_name=f"ita_{station}_{year_min}_{year_max}_{interval}{suffix}.pdf",
             mime="application/pdf",
         )
-
+    
     # Optional: close figure to free memory (Streamlit may keep it)
     import matplotlib.pyplot as plt
     plt.close(fig)
@@ -365,14 +364,31 @@ with tab_single:
 with tab_all:
     st.subheader("Trend by station (all stations)")
     st.caption("Mann–Kendall trend for all wet-zone stations (annual totals). Uses the year range from the sidebar.")
-    mk_all_df = get_all_stations_mk(df, int(year_min), int(year_max))
-    col_bar, col_map = st.columns(2)
-    with col_bar:
+    all_bar = st.progress(0, text="Computing trend for all stations...")
+    mk_all_result = [None]
+
+    def run_all_stations_mk_thread():
+        try:
+            mk_all_result[0] = get_all_stations_mk(df, int(year_min), int(year_max))
+        except Exception:
+            mk_all_result[0] = None
+
+    thread_all = threading.Thread(target=run_all_stations_mk_thread)
+    thread_all.start()
+    p_all = 0
+    while thread_all.is_alive():
+        p_all = min(p_all + 0.03, 0.92)
+        all_bar.progress(p_all, text="Computing trend for all stations...")
+        time.sleep(0.08)
+    thread_all.join()
+    all_bar.progress(1.0, text="Done.")
+    time.sleep(0.2)
+    all_bar.empty()
+    mk_all_df = mk_all_result[0]
+    if mk_all_df is None or mk_all_df.empty:
+        st.warning("Could not compute trend for all stations. Check the year range and data.")
+    else:
         fig_bar = mk_all_stations_bar_plotly(mk_all_df)
         if fig_bar is not None:
             st.plotly_chart(fig_bar, use_container_width=True)
-    with col_map:
-        fig_map = mk_all_stations_map_plotly(mk_all_df)
-        if fig_map is not None:
-            st.plotly_chart(fig_map, use_container_width=True)
-    st.caption("Bar: Sen's slope (mm/year) by station; red = increasing, blue = decreasing, gray = no significant trend. Map: station locations colored by trend.")
+    st.caption("Sen's slope (mm/year) by station; red = increasing, blue = decreasing, gray = no significant trend.")

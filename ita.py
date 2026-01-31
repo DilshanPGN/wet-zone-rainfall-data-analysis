@@ -38,15 +38,6 @@ SHEET_NAME = "All"
 RAINFALL_COLUMNS = [
     "Colombo", "Galle", "Nuwara Eliya", "Rathnapura", "Maliboda", "Deniyaya",
 ]
-# Approximate coordinates (lat, lon) for Sri Lanka wet-zone stations (for trend maps)
-STATION_COORDS = {
-    "Colombo": (6.93, 79.85),
-    "Galle": (6.03, 80.22),
-    "Nuwara Eliya": (6.95, 80.79),
-    "Rathnapura": (6.58, 80.40),
-    "Maliboda": (6.52, 80.48),
-    "Deniyaya": (6.35, 80.55),
-}
 
 
 def load_data(path: Path | None = None) -> pd.DataFrame:
@@ -487,21 +478,18 @@ def get_all_stations_mk(
 ) -> pd.DataFrame:
     """
     Run Mann–Kendall test for all stations (annual totals) and return a DataFrame
-    with Station, trend, p_value, slope, significant, lat, lon (for maps).
+    with Station, trend, p_value, slope, significant, n.
     """
     rows = []
     for stn in RAINFALL_COLUMNS:
         series = get_series(df, stn, year_min, year_max, "annual")
         r = run_mann_kendall(series, alpha=0.05)
-        lat, lon = STATION_COORDS.get(stn, (None, None))
         rows.append({
             "Station": stn,
             "trend": r.get("trend") or "no trend",
             "p_value": r.get("p"),
             "slope": r.get("slope"),
             "significant": r.get("significant", False),
-            "lat": lat,
-            "lon": lon,
             "n": r.get("n", 0),
         })
     return pd.DataFrame(rows)
@@ -510,7 +498,7 @@ def get_all_stations_mk(
 def mk_all_stations_bar_plotly(mk_df: pd.DataFrame) -> "go.Figure | None":
     """
     Bar chart: Sen's slope by station, colored by trend (increasing=red/orange,
-    decreasing=blue, no trend=gray). Like a spatial-style trend summary.
+    decreasing=blue, no trend=gray).
     """
     if go is None or mk_df.empty:
         return None
@@ -535,44 +523,6 @@ def mk_all_stations_bar_plotly(mk_df: pd.DataFrame) -> "go.Figure | None":
         height=380,
         margin=dict(t=50, b=50),
         showlegend=False,
-    )
-    return fig
-
-
-def mk_all_stations_map_plotly(mk_df: pd.DataFrame) -> "go.Figure | None":
-    """
-    Simple map: stations as points (lat, lon) colored by trend (red=increasing,
-    blue=decreasing, gray=no trend). Uses Plotly scatter_geo for Sri Lanka.
-    """
-    if go is None or mk_df.empty or mk_df["lat"].isna().all():
-        return None
-    df = mk_df.dropna(subset=["lat", "lon"])
-    if df.empty:
-        return None
-    color_map = {"increasing": "red", "decreasing": "blue", "no trend": "gray"}
-    colors = [color_map.get(t, "gray") for t in df["trend"]]
-    fig = go.Figure(
-        data=go.Scattergeo(
-            lon=df["lon"],
-            lat=df["lat"],
-            text=df.apply(lambda r: f"{r['Station']}<br>Slope: {r['slope']:.2f} mm/yr" if pd.notna(r["slope"]) else r["Station"], axis=1),
-            mode="markers+text",
-            marker=dict(size=14, color=colors, symbol="circle", line=dict(width=1, color="black")),
-            textposition="top center",
-        )
-    )
-    fig.update_geos(
-        center=dict(lat=7.0, lon=80.5),
-        projection_scale=80,
-        visible=True,
-        scope="asia",
-        showcountries=True,
-        countrywidth=0.5,
-    )
-    fig.update_layout(
-        title="Spatial trend (wet-zone stations)",
-        height=400,
-        margin=dict(t=50, b=0, l=0, r=0),
     )
     return fig
 
