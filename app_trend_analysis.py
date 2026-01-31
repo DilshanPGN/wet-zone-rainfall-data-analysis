@@ -11,10 +11,13 @@ import time
 
 import streamlit as st
 
+import plotly.graph_objects as go
+
 from ita import (
     load_data,
     RAINFALL_COLUMNS,
     run_ita,
+    run_ita_from_series,
 )
 
 # -----------------------------------------------------------------------------
@@ -129,15 +132,84 @@ compute_bar.empty()
 if ita_error[0] is not None:
     st.error(f"ITA failed: {ita_error[0]}")
     st.stop()
-series, first_half, second_half, summary, fig = ita_result[0]
+series_full, first_half_full, second_half_full, summary_full, fig_full = ita_result[0]
 
-if summary["n"] == 0:
+if summary_full["n"] == 0:
     st.warning("No data in the selected range. Widen the year range or choose another station.")
     st.stop()
 
 # -----------------------------------------------------------------------------
+# Selection state and interactive time series (drag to select range)
+# -----------------------------------------------------------------------------
+if "ita_selection" not in st.session_state:
+    st.session_state.ita_selection = None
+
+# Plotly time series for box-select (drag to select a range)
+x_ts = list(range(len(series_full)))
+y_ts = series_full.values.tolist()
+fig_plotly = go.Figure()
+fig_plotly.add_trace(
+    go.Scatter(
+        x=x_ts,
+        y=y_ts,
+        mode="lines+markers",
+        name="Rainfall",
+        line=dict(color="steelblue", width=1.5),
+        marker=dict(size=4),
+    )
+)
+fig_plotly.update_layout(
+    title="Time series — drag a box to select a range (results below update)",
+    xaxis_title="Time index",
+    yaxis_title="Rainfall (mm)",
+    height=350,
+    dragmode="select",
+    margin=dict(t=50, b=50),
+)
+fig_plotly.update_xaxes(rangeslider_visible=False)
+
+event = st.plotly_chart(
+    fig_plotly,
+    key="ita_ts_select",
+    on_select="rerun",
+    selection_mode=("box",),
+    use_container_width=True,
+)
+
+# Update ita_selection from chart selection (point_indices = time indices)
+if event and getattr(event, "selection", None):
+    sel = event.selection
+    indices = sel.get("point_indices", []) if isinstance(sel, dict) else getattr(sel, "point_indices", [])
+    if indices:
+        st.session_state.ita_selection = (min(indices), max(indices))
+
+# Reset button
+if st.button("Reset to full range", type="secondary"):
+    st.session_state.ita_selection = None
+    st.rerun()
+
+# Use subset or full results
+if st.session_state.ita_selection is not None:
+    start_idx, end_idx = st.session_state.ita_selection
+    series_sub = series_full.iloc[start_idx : end_idx + 1].reset_index(drop=True)
+    if len(series_sub) >= 2:
+        series, first_half, second_half, summary, fig = run_ita_from_series(
+            series_sub,
+            station,
+            interval,
+            title_suffix=f"indices {start_idx}–{end_idx}",
+        )
+        st.info(f"Showing **selected range**: indices {start_idx}–{end_idx} ({len(series_sub)} points). Results, AI analysis, and export reflect this subset. Use *Reset to full range* to clear.")
+    else:
+        series, first_half, second_half, summary, fig = series_full, first_half_full, second_half_full, summary_full, fig_full
+        st.warning("Selected range too short (need ≥2 points). Showing full range.")
+else:
+    series, first_half, second_half, summary, fig = series_full, first_half_full, second_half_full, summary_full, fig_full
+
+# -----------------------------------------------------------------------------
 # Main: chart and metrics
 # -----------------------------------------------------------------------------
+st.subheader("Results (full range or selected range)")
 col_chart, col_metrics = st.columns([2, 1])
 
 with col_chart:
@@ -180,13 +252,14 @@ else:
     trend_sen = "near zero (stable)"
 
 unit_slope = "mm/year" if interval == "annual" else ("mm/day" if interval == "daily" else "mm/step")
+range_desc = f"indices {st.session_state.ita_selection[0]}–{st.session_state.ita_selection[1]}" if st.session_state.ita_selection else f"{year_min}–{year_max}"
 interpretation = f"""
 **ITA interpretation:** {trend_ita.capitalize()}. {reason}
 
 **Sen's slope:** {trend_sen} (slope ≈ {slope:.2f} {unit_slope}).  
 **Mean change** between first and second half: {mean_change:.2f} mm.
 
-**Conclusion:** For **{station}** over {year_min}–{year_max} ({interval} scale), the series shows a **{trend_ita}** pattern. Use this together with Mann–Kendall (if run separately) for significance.
+**Conclusion:** For **{station}** ({range_desc}, {interval} scale), the series shows a **{trend_ita}** pattern. Use this together with Mann–Kendall (if run separately) for significance.
 """
 st.markdown(interpretation)
 
@@ -203,19 +276,20 @@ fig.savefig(buf_pdf, format="pdf", bbox_inches="tight")
 png_bytes = buf_png.getvalue()
 pdf_bytes = buf_pdf.getvalue()
 
+suffix = f"_selected_{st.session_state.ita_selection[0]}_{st.session_state.ita_selection[1]}" if st.session_state.ita_selection else ""
 col_png, col_pdf, _ = st.columns(3)
 with col_png:
     st.download_button(
         label="Download as PNG",
         data=png_bytes,
-        file_name=f"ita_{station}_{year_min}_{year_max}_{interval}.png",
+        file_name=f"ita_{station}_{year_min}_{year_max}_{interval}{suffix}.png",
         mime="image/png",
     )
 with col_pdf:
     st.download_button(
         label="Download as PDF",
         data=pdf_bytes,
-        file_name=f"ita_{station}_{year_min}_{year_max}_{interval}.pdf",
+        file_name=f"ita_{station}_{year_min}_{year_max}_{interval}{suffix}.pdf",
         mime="application/pdf",
     )
 

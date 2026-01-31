@@ -3,3 +3,4 @@ openpyxl>=3.1.0
 pyhomogeneity>=1.1
 streamlit>=1.28.0
 matplotlib>=3.7.0
+plotly>=5.18.0

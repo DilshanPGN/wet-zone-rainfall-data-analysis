@@ -310,6 +310,52 @@ def run_ita(
     return series, first_half, second_half, summary, fig
 
 
+def run_ita_from_series(
+    series: pd.Series,
+    station: str,
+    interval: Literal["annual", "monthly", "daily"],
+    title_suffix: str = "selected range",
+    use_advanced_chart: bool = True,
+) -> tuple[pd.Series, np.ndarray, np.ndarray, dict, plt.Figure]:
+    """
+    Run ITA on an already-extracted series (e.g. a subset from box selection).
+
+    Returns (series, first_half, second_half, summary_dict, figure).
+    """
+    series = series.dropna()
+    if len(series) < 2:
+        empty_summary = {
+            "n": 0, "pct_above": 0.0, "pct_below": 0.0, "mean_change": 0.0,
+            "sens_slope": None, "sens_intercept": None,
+        }
+        fig = plot_ita_advanced(
+            series=series, first_half=np.array([]), second_half=np.array([]),
+            summary=empty_summary, title_base="", xlabel_ita="", ylabel_ita="",
+            step_label="step",
+        )
+        return series, np.array([]), np.array([]), empty_summary, fig
+    first_half, second_half = ita_split(series)
+    summary = ita_summary_stats(first_half, second_half)
+    slope, intercept = sens_slope(series)
+    summary["sens_slope"] = slope
+    summary["sens_intercept"] = intercept
+    step_label = "year" if interval == "annual" else ("day" if interval == "daily" else "step")
+    xlabel_ita = f"First half ({step_label})"
+    ylabel_ita = f"Second half ({step_label})"
+    title_base = f"ITA — {station} ({title_suffix}, {interval})"
+    fig = plot_ita_advanced(
+        series=series,
+        first_half=first_half,
+        second_half=second_half,
+        summary=summary,
+        title_base=title_base,
+        xlabel_ita=xlabel_ita,
+        ylabel_ita=ylabel_ita,
+        step_label=step_label,
+    )
+    return series, first_half, second_half, summary, fig
+
+
 if __name__ == "__main__":
     df = load_data()
     year_min = int(df["Year"].min())
