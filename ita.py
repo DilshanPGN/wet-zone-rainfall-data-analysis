@@ -23,6 +23,10 @@ try:
     import pymannkendall as mk
 except ImportError:
     mk = None
+try:
+    import plotly.graph_objects as go
+except ImportError:
+    go = None
 
 # -----------------------------------------------------------------------------
 # Configuration (aligned with project)
@@ -34,6 +38,15 @@ SHEET_NAME = "All"
 RAINFALL_COLUMNS = [
     "Colombo", "Galle", "Nuwara Eliya", "Rathnapura", "Maliboda", "Deniyaya",
 ]
+# Approximate coordinates (lat, lon) for Sri Lanka wet-zone stations (for trend maps)
+STATION_COORDS = {
+    "Colombo": (6.93, 79.85),
+    "Galle": (6.03, 80.22),
+    "Nuwara Eliya": (6.95, 80.79),
+    "Rathnapura": (6.58, 80.40),
+    "Maliboda": (6.52, 80.48),
+    "Deniyaya": (6.35, 80.55),
+}
 
 
 def load_data(path: Path | None = None) -> pd.DataFrame:
@@ -408,6 +421,160 @@ def run_ita_from_series(
         step_label=step_label,
     )
     return series, first_half, second_half, summary, fig
+
+
+def mk_timeseries_plotly(
+    series: pd.Series,
+    mk_result: dict,
+    x_values: list | np.ndarray | None = None,
+    title: str = "Mann–Kendall trend analysis",
+    y_label: str = "Rainfall (mm)",
+    x_label: str = "Year",
+) -> "go.Figure | None":
+    """
+    Build a Plotly figure: time series (line + markers) with Sen's trend line overlaid.
+    Like the reference image: temporal trend with clear linear trend line.
+    Returns None if plotly is not available.
+    """
+    if go is None:
+        return None
+    n = len(series)
+    if n == 0:
+        return None
+    y_vals = series.values.tolist()
+    x_vals = (x_values if x_values is not None else list(range(n)))
+    if len(x_vals) != n:
+        x_vals = list(range(n))
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals,
+            y=y_vals,
+            mode="lines+markers",
+            name="Rainfall",
+            line=dict(color="steelblue", width=2),
+            marker=dict(size=6),
+        )
+    )
+    slope = mk_result.get("slope")
+    if slope is not None and n >= 2:
+        _, intercept = sens_slope(series)
+        trend_line = slope * np.arange(n) + intercept
+        fig.add_trace(
+            go.Scatter(
+                x=x_vals,
+                y=trend_line.tolist(),
+                mode="lines",
+                name=f"Sen's trend (slope ≈ {slope:.2f})",
+                line=dict(color="coral", width=3, dash="dash"),
+            )
+        )
+    fig.update_layout(
+        title=title,
+        xaxis_title=x_label,
+        yaxis_title=y_label,
+        height=400,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=60, b=50),
+    )
+    return fig
+
+
+def get_all_stations_mk(
+    df: pd.DataFrame,
+    year_min: int,
+    year_max: int,
+) -> pd.DataFrame:
+    """
+    Run Mann–Kendall test for all stations (annual totals) and return a DataFrame
+    with Station, trend, p_value, slope, significant, lat, lon (for maps).
+    """
+    rows = []
+    for stn in RAINFALL_COLUMNS:
+        series = get_series(df, stn, year_min, year_max, "annual")
+        r = run_mann_kendall(series, alpha=0.05)
+        lat, lon = STATION_COORDS.get(stn, (None, None))
+        rows.append({
+            "Station": stn,
+            "trend": r.get("trend") or "no trend",
+            "p_value": r.get("p"),
+            "slope": r.get("slope"),
+            "significant": r.get("significant", False),
+            "lat": lat,
+            "lon": lon,
+            "n": r.get("n", 0),
+        })
+    return pd.DataFrame(rows)
+
+
+def mk_all_stations_bar_plotly(mk_df: pd.DataFrame) -> "go.Figure | None":
+    """
+    Bar chart: Sen's slope by station, colored by trend (increasing=red/orange,
+    decreasing=blue, no trend=gray). Like a spatial-style trend summary.
+    """
+    if go is None or mk_df.empty:
+        return None
+    stations = mk_df["Station"].tolist()
+    slopes = mk_df["slope"].fillna(0).tolist()
+    trend_colors = []
+    for t in mk_df["trend"]:
+        if t == "increasing":
+            trend_colors.append("rgba(220, 53, 69, 0.8)")
+        elif t == "decreasing":
+            trend_colors.append("rgba(13, 110, 253, 0.8)")
+        else:
+            trend_colors.append("rgba(108, 117, 125, 0.8)")
+    fig = go.Figure(
+        data=[go.Bar(x=stations, y=slopes, marker_color=trend_colors, name="Sen's slope (mm/yr)")]
+    )
+    fig.add_hline(y=0, line_dash="dash", line_color="gray")
+    fig.update_layout(
+        title="Trend by station (Mann–Kendall Sen's slope)",
+        xaxis_title="Station",
+        yaxis_title="Sen's slope (mm/year)",
+        height=380,
+        margin=dict(t=50, b=50),
+        showlegend=False,
+    )
+    return fig
+
+
+def mk_all_stations_map_plotly(mk_df: pd.DataFrame) -> "go.Figure | None":
+    """
+    Simple map: stations as points (lat, lon) colored by trend (red=increasing,
+    blue=decreasing, gray=no trend). Uses Plotly scatter_geo for Sri Lanka.
+    """
+    if go is None or mk_df.empty or mk_df["lat"].isna().all():
+        return None
+    df = mk_df.dropna(subset=["lat", "lon"])
+    if df.empty:
+        return None
+    color_map = {"increasing": "red", "decreasing": "blue", "no trend": "gray"}
+    colors = [color_map.get(t, "gray") for t in df["trend"]]
+    fig = go.Figure(
+        data=go.Scattergeo(
+            lon=df["lon"],
+            lat=df["lat"],
+            text=df.apply(lambda r: f"{r['Station']}<br>Slope: {r['slope']:.2f} mm/yr" if pd.notna(r["slope"]) else r["Station"], axis=1),
+            mode="markers+text",
+            marker=dict(size=14, color=colors, symbol="circle", line=dict(width=1, color="black")),
+            textposition="top center",
+        )
+    )
+    fig.update_geos(
+        center=dict(lat=7.0, lon=80.5),
+        projection_scale=80,
+        visible=True,
+        scope="asia",
+        showcountries=True,
+        countrywidth=0.5,
+    )
+    fig.update_layout(
+        title="Spatial trend (wet-zone stations)",
+        height=400,
+        margin=dict(t=50, b=0, l=0, r=0),
+    )
+    return fig
 
 
 if __name__ == "__main__":

@@ -19,6 +19,10 @@ from ita import (
     run_ita,
     run_ita_from_series,
     run_mann_kendall,
+    mk_timeseries_plotly,
+    get_all_stations_mk,
+    mk_all_stations_bar_plotly,
+    mk_all_stations_map_plotly,
 )
 
 # -----------------------------------------------------------------------------
@@ -251,6 +255,47 @@ if mk_result.get("significant") is True:
     st.success(f"**Statistically significant** at α = 0.05: {mk_result.get('trend_direction', '')}.")
 elif mk_result.get("p") is not None:
     st.caption("Not significant at α = 0.05 (p ≥ 0.05).")
+
+# -----------------------------------------------------------------------------
+# Mann–Kendall trend chart (time series + trend line, like reference image)
+# -----------------------------------------------------------------------------
+st.subheader("Mann–Kendall trend: time series and trend line")
+if interval == "annual" and hasattr(series.index, "tolist") and len(series.index) == len(series):
+    try:
+        x_vals_mk = series.index.tolist()
+        x_label_mk = "Year"
+    except Exception:
+        x_vals_mk = list(range(len(series)))
+        x_label_mk = "Time index"
+else:
+    x_vals_mk = list(range(len(series)))
+    x_label_mk = "Time index"
+fig_mk_ts = mk_timeseries_plotly(
+    series,
+    mk_result,
+    x_values=x_vals_mk,
+    title=f"Mann–Kendall trend — {station} (rainfall + Sen's trend line)",
+    y_label="Rainfall (mm)",
+    x_label=x_label_mk,
+)
+if fig_mk_ts is not None:
+    st.plotly_chart(fig_mk_ts, use_container_width=True)
+
+# -----------------------------------------------------------------------------
+# Trend by station (all stations): bar chart + spatial map
+# -----------------------------------------------------------------------------
+st.subheader("Trend by station (all stations)")
+mk_all_df = get_all_stations_mk(df, int(year_min), int(year_max))
+col_bar, col_map = st.columns(2)
+with col_bar:
+    fig_bar = mk_all_stations_bar_plotly(mk_all_df)
+    if fig_bar is not None:
+        st.plotly_chart(fig_bar, use_container_width=True)
+with col_map:
+    fig_map = mk_all_stations_map_plotly(mk_all_df)
+    if fig_map is not None:
+        st.plotly_chart(fig_map, use_container_width=True)
+st.caption("Bar: Sen's slope (mm/year) by station; red = increasing, blue = decreasing, gray = no significant trend. Map: station locations colored by trend.")
 
 # -----------------------------------------------------------------------------
 # AI Analysis section (rule-based interpretation)
