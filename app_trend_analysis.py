@@ -59,7 +59,7 @@ st.title("Innovative Trend Analysis (ITA)")
 st.caption("Wet zone rainfall data — select station, date range, and interval to view trends and export charts.")
 
 # -----------------------------------------------------------------------------
-# Load data once (with progress bar)
+# Data loading (cached; load only when a section needs it or on Export button)
 # -----------------------------------------------------------------------------
 @st.cache_data
 def get_df():
@@ -69,17 +69,21 @@ def get_df():
         st.error(str(e))
         return None
 
-progress_bar = st.progress(0, text="Loading data...")
-with st.spinner("Reading dataset..."):
-    df = get_df()
-progress_bar.progress(1.0, text="Data loaded.")
-progress_bar.empty()
 
-if df is None:
-    st.stop()
+def _ensure_year_range_in_session(df):
+    if df is not None and not df.empty:
+        st.session_state["year_min_all"] = int(df["Year"].min())
+        st.session_state["year_max_all"] = int(df["Year"].max())
 
-year_min_all = int(df["Year"].min())
-year_max_all = int(df["Year"].max())
+
+# Default year range until data is loaded (e.g. when only Export tab is open)
+if "year_min_all" not in st.session_state:
+    st.session_state["year_min_all"] = 1990
+if "year_max_all" not in st.session_state:
+    st.session_state["year_max_all"] = 2021
+
+year_min_all = st.session_state["year_min_all"]
+year_max_all = st.session_state["year_max_all"]
 
 # -----------------------------------------------------------------------------
 # Sidebar: controls
@@ -89,9 +93,9 @@ with st.sidebar:
 
     station = st.selectbox(
         "Station (city)",
-        options=RAINFALL_COLUMNS,
+        options=["All"] + list(RAINFALL_COLUMNS),
         index=0,
-        help="Rainfall station to analyze.",
+        help="Rainfall station to analyze. Use 'All' in Export all charts to export every station.",
     )
 
     col1, col2 = st.columns(2)
@@ -127,9 +131,58 @@ with st.sidebar:
         help="Annual: yearly totals. Monthly: all months in order. Daily: one value per day (uses Date column).",
     )
 
-tab_single, tab_all = st.tabs(["Single station analysis", "Trend by station (all stations)"])
+# Section selector: only the selected section's code runs (no load/calc for others)
+section = st.radio(
+    "Section",
+    ["Single station analysis", "Trend by station (all stations)", "Export all charts"],
+    index=0,
+    key="main_section",
+    horizontal=True,
+    label_visibility="collapsed",
+)
+# Style like tabs: use columns to show three options
+st.markdown("---")
 
-with tab_single:
+if section == "Single station analysis":
+    # Load data only when this section is selected
+    progress_bar = st.progress(0, text="Loading data...")
+    with st.spinner("Reading dataset..."):
+        df = get_df()
+    progress_bar.progress(0.5, text="Processing dataset...")
+    time.sleep(0.1)
+    progress_bar.progress(1.0, text="Data loaded.")
+    time.sleep(0.2)
+    progress_bar.empty()
+    if df is None:
+        st.stop()
+    _ensure_year_range_in_session(df)
+    year_min_all = int(df["Year"].min())
+    year_max_all = int(df["Year"].max())
+
+elif section == "Trend by station (all stations)":
+    # Load data only when this section is selected
+    progress_bar = st.progress(0, text="Loading data...")
+    with st.spinner("Reading dataset..."):
+        df = get_df()
+    progress_bar.progress(0.5, text="Processing dataset...")
+    time.sleep(0.1)
+    progress_bar.progress(1.0, text="Data loaded.")
+    time.sleep(0.2)
+    progress_bar.empty()
+    if df is None:
+        st.stop()
+    _ensure_year_range_in_session(df)
+    year_min_all = int(df["Year"].min())
+    year_max_all = int(df["Year"].max())
+
+else:
+    # Export all charts: no data load here; df will be loaded when user clicks Export
+    df = None
+
+if section == "Single station analysis" and df is not None:
+    if station == "All":
+        st.info("Select a specific station above for single-station analysis. Use the **Export all charts** section to export charts for every station.")
+        st.stop()
     # -----------------------------------------------------------------------------
     # Run ITA (progress bar while computing — trend can take a moment to appear)
     # -----------------------------------------------------------------------------
@@ -165,6 +218,9 @@ with tab_single:
     if summary_full["n"] == 0:
         st.warning("No data in the selected range. Widen the year range or choose another station.")
         st.stop()
+
+    # Progress bar for rendering single-station results
+    render_bar = st.progress(0, text="Preparing time series chart...")
     
     # -----------------------------------------------------------------------------
     # Selection state and interactive time series (drag to select range)
@@ -184,8 +240,8 @@ with tab_single:
             y=y_ts,
             mode="lines+markers",
             name="Rainfall",
-            line=dict(color="steelblue", width=1.5),
-            marker=dict(size=4),
+            line=dict(color="steelblue", width=0.6),
+            marker=dict(size=1, color="black", line=dict(width=0.2, color="black")),
         )
     )
     fig_plotly.update_layout(
@@ -197,7 +253,8 @@ with tab_single:
         margin=dict(t=50, b=50),
     )
     fig_plotly.update_xaxes(rangeslider_visible=False)
-    
+    render_bar.progress(0.1, text="Time series chart ready. Preparing selection...")
+
     event = st.plotly_chart(
         fig_plotly,
         key=f"ita_ts_select_{st.session_state.ita_chart_key}",
@@ -237,18 +294,24 @@ with tab_single:
         start_idx, end_idx = st.session_state.ita_selection
         series_sub = series_full.iloc[start_idx : end_idx + 1].reset_index(drop=True)
         if len(series_sub) >= 2:
+            sel_bar = st.progress(0, text="Updating analysis for selected range...")
             series, first_half, second_half, summary, fig_ts, fig_ita = run_ita_from_series(
                 series_sub,
                 station,
                 interval,
                 title_suffix=f"indices {start_idx}–{end_idx}",
             )
+            sel_bar.progress(1.0, text="Done.")
+            time.sleep(0.15)
+            sel_bar.empty()
             st.info(f"Showing **selected range**: indices {start_idx}–{end_idx} ({len(series_sub)} points). Results, AI analysis, and export reflect this subset. Use *Reset to full range* to clear.")
         else:
             series, first_half, second_half, summary, fig_ts, fig_ita = series_full, first_half_full, second_half_full, summary_full, fig_ts_full, fig_ita_full
             st.warning("Selected range too short (need ≥2 points). Showing full range.")
     else:
         series, first_half, second_half, summary, fig_ts, fig_ita = series_full, first_half_full, second_half_full, summary_full, fig_ts_full, fig_ita_full
+
+    render_bar.progress(0.25, text="Preparing ITA charts...")
 
     suffix_ita = f"_selected_{st.session_state.ita_selection[0]}_{st.session_state.ita_selection[1]}" if st.session_state.ita_selection else ""
 
@@ -275,6 +338,7 @@ with tab_single:
             if slope is not None:
                 unit = "mm/year" if interval == "annual" else ("mm/day" if interval == "daily" else "mm/step")
                 st.metric("Sen's slope", f"{slope:.2f} {unit}")
+    render_bar.progress(0.35, text="Preparing ITA scatter...")
 
     # -----------------------------------------------------------------------------
     # ITA trend (scatter only: first half vs second half)
@@ -304,7 +368,8 @@ with tab_single:
         if slope is not None:
             unit = "mm/year" if interval == "annual" else ("mm/day" if interval == "daily" else "mm/step")
             st.metric("Sen's slope", f"{slope:.2f} {unit}")
-    
+    render_bar.progress(0.45, text="Computing Mann–Kendall...")
+
     # -----------------------------------------------------------------------------
     # Mann–Kendall trend test
     # -----------------------------------------------------------------------------
@@ -328,6 +393,8 @@ with tab_single:
     elif mk_result.get("p") is not None:
         st.caption("Not significant at α = 0.05 (p ≥ 0.05).")
     
+    render_bar.progress(0.55, text="Building Mann–Kendall chart...")
+
     # -----------------------------------------------------------------------------
     # Mann–Kendall trend chart (time series + trend line, like reference image)
     # -----------------------------------------------------------------------------
@@ -352,6 +419,7 @@ with tab_single:
     )
     if fig_mk_ts is not None:
         st.plotly_chart(fig_mk_ts, use_container_width=True)
+        render_bar.progress(0.65, text="Preparing export options...")
         # Export: Mann–Kendall trend (high-quality PNG/PDF)
         mk_png = export_plotly_high_quality(fig_mk_ts, "png")
         mk_pdf = export_plotly_high_quality(fig_mk_ts, "pdf")
@@ -364,6 +432,8 @@ with tab_single:
                 if mk_pdf is not None:
                     st.download_button("Export: Mann–Kendall trend (PDF)", data=mk_pdf, file_name=f"mann_kendall_trend_{station}_{year_min}_{year_max}.pdf", mime="application/pdf", key="export_mk_pdf")
     
+    render_bar.progress(0.7, text="Preparing AI analysis...")
+
     # -----------------------------------------------------------------------------
     # AI Analysis section (rule-based interpretation)
     # -----------------------------------------------------------------------------
@@ -407,6 +477,7 @@ with tab_single:
     **Conclusion:** For **{station}** ({range_desc}, {interval} scale), the series shows a **{trend_ita}** pattern. The Mann–Kendall test indicates the trend is **{mk_sig}**.
     """
     st.markdown(interpretation)
+    render_bar.progress(0.8, text="Preparing CSV exports...")
 
     # -----------------------------------------------------------------------------
     # Export trend data (CSV) — for users to draw their own charts
@@ -461,6 +532,8 @@ with tab_single:
         key="export_csv_zip",
     )
 
+    render_bar.progress(0.9, text="Preparing combined export...")
+
     # -----------------------------------------------------------------------------
     # Combined export (all single-station charts in one ZIP)
     # -----------------------------------------------------------------------------
@@ -498,6 +571,9 @@ with tab_single:
         zip_pdf_bytes = zip_pdf.getvalue()
         st.download_button("Download all charts (PDF, ZIP)", data=zip_pdf_bytes, file_name=f"{zip_base}_pdf.zip", mime="application/zip", key="export_combined_pdf_zip")
     st.caption("Use the export buttons above each chart for high-quality PNG or PDF.")
+    render_bar.progress(1.0, text="Done.")
+    time.sleep(0.15)
+    render_bar.empty()
 
     # Optional: close figures to free memory (Streamlit may keep them)
     import matplotlib.pyplot as plt
@@ -505,7 +581,7 @@ with tab_single:
         plt.close(fig_ts)
     plt.close(fig_ita)
 
-with tab_all:
+elif section == "Trend by station (all stations)" and df is not None:
     st.subheader("Trend by station (all stations)")
     st.caption("Mann–Kendall trend for all wet-zone stations (annual totals). Uses the year range from the sidebar.")
     all_bar = st.progress(0, text="Computing trend for all stations...")
@@ -525,14 +601,18 @@ with tab_all:
         all_bar.progress(p_all, text="Computing trend for all stations...")
         time.sleep(0.08)
     thread_all.join()
-    all_bar.progress(1.0, text="Done.")
-    time.sleep(0.2)
-    all_bar.empty()
+    all_bar.progress(0.95, text="Rendering bar chart...")
     mk_all_df = mk_all_result[0]
     if mk_all_df is None or mk_all_df.empty:
+        all_bar.progress(1.0, text="Done.")
+        time.sleep(0.2)
+        all_bar.empty()
         st.warning("Could not compute trend for all stations. Check the year range and data.")
     else:
         fig_bar = mk_all_stations_bar_plotly(mk_all_df)
+        all_bar.progress(1.0, text="Done.")
+        time.sleep(0.2)
+        all_bar.empty()
         if fig_bar is not None:
             st.plotly_chart(fig_bar, use_container_width=True)
             # Export: Trend by station (all stations) — high-quality PNG/PDF
@@ -547,3 +627,118 @@ with tab_all:
                     if all_pdf is not None:
                         st.download_button("Export: Trend by station (PDF)", data=all_pdf, file_name=f"trend_by_station_{year_min}_{year_max}.pdf", mime="application/pdf", key="export_all_pdf")
     st.caption("Sen's slope (mm/year) by station; red = increasing, blue = decreasing, gray = no significant trend.")
+
+else:
+    # Export all charts: no data load or calculation until user presses the button
+    st.subheader("Export all charts")
+    st.caption("Generate all charts and CSV data for the **selected station** (or **All** for every station), **year range**, and **time interval** (sidebar). Data is loaded and computed only when you press the button below. The ZIP includes PNG charts and CSV files (timeseries_trend, ita_scatter, trend_summary) per station.")
+    if st.button("Generate and download all charts (ZIP)", type="primary", key="export_all_btn"):
+        import matplotlib.pyplot as plt
+        prog = st.progress(0, text="Loading data...")
+        status_placeholder = st.empty()
+        try:
+            status_placeholder.text("Loading dataset...")
+            df_export = get_df()
+            if df_export is None:
+                status_placeholder.error("Could not load dataset. Check that the Excel file exists in the dataset folder.")
+                prog.empty()
+            else:
+                _ensure_year_range_in_session(df_export)
+                stations_to_export = list(RAINFALL_COLUMNS) if station == "All" else [station]
+                n_stations = len(stations_to_export)
+                zip_buf = BytesIO()
+                with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for idx, stn in enumerate(stations_to_export):
+                        p_base = 0.1 + (0.75 * idx / n_stations) if n_stations else 0.1
+                        status_placeholder.text(f"Processing {stn} ({idx + 1}/{n_stations})...")
+                        prog.progress(p_base, text=f"Processing {stn}...")
+                        series, first_half, second_half, summary, fig_ts, fig_ita = run_ita(
+                            df_export, stn, int(year_min), int(year_max), interval
+                        )
+                        if summary["n"] == 0:
+                            continue
+                        prefix = f"{stn.replace(' ', '_')}_"
+                        x_ts = list(range(len(series)))
+                        y_ts = series.values.tolist()
+                        fig_plotly = go.Figure()
+                        fig_plotly.add_trace(
+                            go.Scatter(
+                                x=x_ts,
+                                y=y_ts,
+                                mode="lines+markers",
+                                name="Rainfall",
+                                line=dict(color="steelblue", width=0.6),
+                                marker=dict(size=1, color="black", line=dict(width=0.2, color="black")),
+                            )
+                        )
+                        fig_plotly.update_layout(
+                            title=f"Time series — {stn} ({year_min}–{year_max}, {interval})",
+                            xaxis_title="Time index",
+                            yaxis_title="Rainfall (mm)",
+                            height=350,
+                            margin=dict(t=50, b=50),
+                        )
+                        mk_result = run_mann_kendall(series, alpha=0.05)
+                        if interval == "annual" and hasattr(series.index, "tolist") and len(series.index) == len(series):
+                            try:
+                                x_vals_mk = series.index.tolist()
+                                x_label_mk = "Year"
+                            except Exception:
+                                x_vals_mk = list(range(len(series)))
+                                x_label_mk = "Time index"
+                        else:
+                            x_vals_mk = list(range(len(series)))
+                            x_label_mk = "Time index"
+                        fig_mk = mk_timeseries_plotly(
+                            series,
+                            mk_result,
+                            x_values=x_vals_mk,
+                            title=f"Mann–Kendall trend — {stn} ({year_min}–{year_max}, {interval})",
+                            y_label="Rainfall (mm)",
+                            x_label=x_label_mk,
+                        )
+                        ts_png = export_plotly_high_quality(fig_plotly, "png")
+                        buf_ts_trend = BytesIO()
+                        buf_ita = BytesIO()
+                        if fig_ts is not None:
+                            fig_ts.savefig(buf_ts_trend, format="png", dpi=EXPORT_DPI, bbox_inches="tight")
+                        fig_ita.savefig(buf_ita, format="png", dpi=EXPORT_DPI, bbox_inches="tight")
+                        ts_trend_png = buf_ts_trend.getvalue() if fig_ts is not None else None
+                        ita_png = buf_ita.getvalue()
+                        mk_png = export_plotly_high_quality(fig_mk, "png") if fig_mk is not None else None
+                        if fig_ts is not None:
+                            plt.close(fig_ts)
+                        plt.close(fig_ita)
+                        if ts_png:
+                            zf.writestr(f"{prefix}1_rainfall_timeseries.png", ts_png)
+                        if ts_trend_png:
+                            zf.writestr(f"{prefix}2_rainfall_timeseries_trend.png", ts_trend_png)
+                        zf.writestr(f"{prefix}3_ita_trend.png", ita_png)
+                        if mk_png:
+                            zf.writestr(f"{prefix}4_mann_kendall_trend.png", mk_png)
+                        # CSV data for this station (same as single-station export)
+                        time_col = "year" if interval == "annual" else "time_index"
+                        df_ts_trend = export_timeseries_trend_csv(series, summary, time_index_name=time_col)
+                        df_ita = export_ita_scatter_csv(first_half, second_half)
+                        df_summary = export_trend_summary_csv(summary, mk_result, stn, year_min, year_max, interval)
+                        zf.writestr(f"{prefix}timeseries_trend.csv", df_ts_trend.to_csv(index=False))
+                        zf.writestr(f"{prefix}ita_scatter.csv", df_ita.to_csv(index=False))
+                        zf.writestr(f"{prefix}trend_summary.csv", df_summary.to_csv(index=False))
+                prog.progress(0.9, text="Finalizing ZIP...")
+                status_placeholder.empty()
+                prog.progress(1.0, text="Done.")
+                time.sleep(0.15)
+                prog.empty()
+                zip_label = "all_stations" if station == "All" else station.replace(" ", "_")
+                zip_name = f"all_charts_{zip_label}_{year_min}_{year_max}_{interval}.zip"
+                st.success("Charts generated. Download the ZIP below.")
+                st.download_button(
+                    "Download all charts (PNG, ZIP)",
+                    data=zip_buf.getvalue(),
+                    file_name=zip_name,
+                    mime="application/zip",
+                    key="download_export_all_zip",
+                )
+        except Exception as e:
+            status_placeholder.error(f"Export failed: {e}")
+            prog.empty()

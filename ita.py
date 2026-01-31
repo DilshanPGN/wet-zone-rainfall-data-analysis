@@ -289,12 +289,12 @@ def plot_ita(
         ax.set_title(title)
         return fig
     x, y = first_half[:n], second_half[:n]
-    ax.scatter(x, y, alpha=0.7, s=40, edgecolors="k", linewidths=0.5, zorder=2)
+    ax.scatter(x, y, alpha=0.8, s=14, edgecolors="k", linewidths=0.25, zorder=2)
     lo = min(x.min(), y.min())
     hi = max(x.max(), y.max())
     margin = (hi - lo) * 0.05 if hi > lo else 1
     lo, hi = lo - margin, hi + margin
-    ax.plot([lo, hi], [lo, hi], "k--", lw=1.5, label="1:1 line (no trend)", zorder=1)
+    ax.plot([lo, hi], [lo, hi], "k--", lw=0.6, label="1:1 line (no trend)", zorder=1)
     ax.set_xlim(lo, hi)
     ax.set_ylim(lo, hi)
     ax.set_xlabel(xlabel, fontsize=11)
@@ -322,11 +322,21 @@ def plot_timeseries_trend_only(
     intercept = summary.get("sens_intercept")
     x_ts = np.arange(len(series))
     y_ts = series.values
-    ax.fill_between(x_ts, y_ts, alpha=0.3, color="steelblue")
-    ax.plot(x_ts, y_ts, color="steelblue", linewidth=0.8, label="Rainfall")
+    ax.fill_between(x_ts, y_ts, alpha=0.25, color="steelblue")
+    ax.plot(
+        x_ts, y_ts,
+        color="steelblue",
+        linewidth=0.5,
+        marker="o",
+        markersize=1,
+        markerfacecolor="black",
+        markeredgecolor="black",
+        markeredgewidth=0.3,
+        label="Rainfall",
+    )
     if slope is not None and intercept is not None and len(series) >= 2:
         trend_line = slope * x_ts + intercept
-        ax.plot(x_ts, trend_line, color="coral", linewidth=2, linestyle="--", label=f"Sen's trend ({slope:.2f} {step_label})")
+        ax.plot(x_ts, trend_line, color="coral", linewidth=0.7, linestyle="--", label=f"Sen's trend ({slope:.2f} {step_label})")
     ax.set_ylabel("Rainfall (mm)", fontsize=11)
     ax.set_xlabel(f"Time index ({step_label}s)", fontsize=11)
     ax.set_title("Rainfall time series and trend", fontsize=12)
@@ -356,15 +366,15 @@ def plot_ita_scatter_only(
         above = y_ita > x_ita
         below = y_ita < x_ita
         on_line = np.logical_and(~above, ~below)
-        ax.scatter(x_ita[above], y_ita[above], c="green", alpha=0.7, s=36, edgecolors="darkgreen", linewidths=0.6, label="Increase (above 1:1)", zorder=2)
-        ax.scatter(x_ita[below], y_ita[below], c="red", alpha=0.7, s=36, edgecolors="darkred", linewidths=0.6, label="Decrease (below 1:1)", zorder=2)
+        ax.scatter(x_ita[above], y_ita[above], c="green", alpha=0.8, s=14, edgecolors="darkgreen", linewidths=0.25, label="Increase (above 1:1)", zorder=2)
+        ax.scatter(x_ita[below], y_ita[below], c="red", alpha=0.8, s=14, edgecolors="darkred", linewidths=0.25, label="Decrease (below 1:1)", zorder=2)
         if np.any(on_line):
-            ax.scatter(x_ita[on_line], y_ita[on_line], c="gray", alpha=0.7, s=36, edgecolors="black", linewidths=0.6, label="No change", zorder=2)
+            ax.scatter(x_ita[on_line], y_ita[on_line], c="gray", alpha=0.8, s=14, edgecolors="black", linewidths=0.25, label="No change", zorder=2)
         lo = min(x_ita.min(), y_ita.min())
         hi = max(x_ita.max(), y_ita.max())
         margin = (hi - lo) * 0.06 if hi > lo else 1
         lo, hi = lo - margin, hi + margin
-        ax.plot([lo, hi], [lo, hi], "k--", lw=2, label="1:1 line (no trend)", zorder=1)
+        ax.plot([lo, hi], [lo, hi], "k--", lw=0.6, label="1:1 line (no trend)", zorder=1)
         ax.set_xlim(lo, hi)
         ax.set_ylim(lo, hi)
         ax.set_xlabel(xlabel_ita + " (mm)", fontsize=11)
@@ -535,8 +545,8 @@ def mk_timeseries_plotly(
             y=y_vals,
             mode="lines+markers",
             name="Rainfall",
-            line=dict(color="steelblue", width=2),
-            marker=dict(size=6),
+            line=dict(color="steelblue", width=0.6),
+            marker=dict(size=1, color="black", line=dict(width=0.2, color="black")),
         )
     )
     slope = mk_result.get("slope")
@@ -549,7 +559,7 @@ def mk_timeseries_plotly(
                 y=trend_line.tolist(),
                 mode="lines",
                 name=f"Sen's trend (slope ≈ {slope:.2f})",
-                line=dict(color="coral", width=3, dash="dash"),
+                line=dict(color="coral", width=0.8, dash="dash"),
             )
         )
     fig.update_layout(
