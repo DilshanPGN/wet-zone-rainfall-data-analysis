@@ -1,0 +1,7 @@
+Station,trend,p_value,Sen_slope_mm_per_year,significant_alpha_005,n
+Colombo,no trend,0.6101267703127584,4.957142857142896,False,31
+Galle,no trend,0.2619630008374654,7.484210526315803,False,31
+Nuwara Eliya,no trend,0.2766963536434415,-6.864705882352943,False,31
+Rathnapura,no trend,0.8650383150743488,-3.0,False,31
+Maliboda,no trend,0.6833368087995224,7.410060170315983,False,31
+Deniyaya,no trend,0.24778083040054266,6.808235294117661,False,31

@@ -18,6 +18,7 @@ from ita import (
     RAINFALL_COLUMNS,
     run_ita,
     run_ita_from_series,
+    run_mann_kendall,
 )
 
 # -----------------------------------------------------------------------------
@@ -229,6 +230,29 @@ with col_metrics:
         st.metric("Sen's slope", f"{slope:.2f} {unit}")
 
 # -----------------------------------------------------------------------------
+# Mann–Kendall trend test
+# -----------------------------------------------------------------------------
+mk_result = run_mann_kendall(series, alpha=0.05)
+st.subheader("Mann–Kendall trend test")
+mk_col1, mk_col2, mk_col3 = st.columns(3)
+with mk_col1:
+    p_val = mk_result.get("p")
+    st.metric("p-value", f"{p_val:.4f}" if p_val is not None else "—")
+with mk_col2:
+    st.metric("Trend (MK)", mk_result.get("trend", "—") or "—")
+with mk_col3:
+    mk_slope = mk_result.get("slope")
+    if mk_slope is not None:
+        unit = "mm/year" if interval == "annual" else ("mm/day" if interval == "daily" else "mm/step")
+        st.metric("Sen's slope (MK)", f"{mk_slope:.4f} {unit}")
+    else:
+        st.metric("Sen's slope (MK)", "—")
+if mk_result.get("significant") is True:
+    st.success(f"**Statistically significant** at α = 0.05: {mk_result.get('trend_direction', '')}.")
+elif mk_result.get("p") is not None:
+    st.caption("Not significant at α = 0.05 (p ≥ 0.05).")
+
+# -----------------------------------------------------------------------------
 # AI Analysis section (rule-based interpretation)
 # -----------------------------------------------------------------------------
 st.subheader("AI Analysis")
@@ -256,13 +280,19 @@ else:
 
 unit_slope = "mm/year" if interval == "annual" else ("mm/day" if interval == "daily" else "mm/step")
 range_desc = f"indices {st.session_state.ita_selection[0]}–{st.session_state.ita_selection[1]}" if st.session_state.ita_selection else f"{year_min}–{year_max}"
+mk_trend = mk_result.get("trend") or "no trend"
+mk_p = mk_result.get("p")
+mk_sig = "significant" if mk_result.get("significant") else "not significant"
+mk_line = f"Mann–Kendall: **{mk_trend}** (p = {mk_p:.4f}); trend is **{mk_sig}** at α = 0.05." if mk_p is not None else "Mann–Kendall: not computed (insufficient data or package missing)."
 interpretation = f"""
 **ITA interpretation:** {trend_ita.capitalize()}. {reason}
 
 **Sen's slope:** {trend_sen} (slope ≈ {slope:.2f} {unit_slope}).  
 **Mean change** between first and second half: {mean_change:.2f} mm.
 
-**Conclusion:** For **{station}** ({range_desc}, {interval} scale), the series shows a **{trend_ita}** pattern. Use this together with Mann–Kendall (if run separately) for significance.
+**Mann–Kendall:** {mk_line}
+
+**Conclusion:** For **{station}** ({range_desc}, {interval} scale), the series shows a **{trend_ita}** pattern. The Mann–Kendall test indicates the trend is **{mk_sig}**.
 """
 st.markdown(interpretation)
 

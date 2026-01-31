@@ -19,6 +19,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+try:
+    import pymannkendall as mk
+except ImportError:
+    mk = None
+
 # -----------------------------------------------------------------------------
 # Configuration (aligned with project)
 # -----------------------------------------------------------------------------
@@ -118,6 +123,55 @@ def sens_slope(series: pd.Series) -> tuple[float, float]:
     slope = float(np.median(slopes))
     intercept = float(np.median(y - slope * x))
     return slope, intercept
+
+
+def run_mann_kendall(series: pd.Series, alpha: float = 0.05) -> dict:
+    """
+    Perform Mann–Kendall trend test on a time series.
+
+    Returns dict with: trend, p, slope (Sen's slope), z, tau, significant (bool),
+    and trend_direction (for display). Uses pymannkendall if available.
+    """
+    x = series.dropna().values
+    n = len(x)
+    result = {
+        "trend": "no trend",
+        "p": None,
+        "slope": None,
+        "z": None,
+        "tau": None,
+        "significant": False,
+        "trend_direction": "no significant trend",
+        "n": n,
+    }
+    if n < 3 or mk is None:
+        if n >= 2 and mk is None:
+            slope, _ = sens_slope(series)
+            result["slope"] = slope
+        return result
+    try:
+        out = mk.original_test(x)
+        result["trend"] = getattr(out, "trend", "no trend")
+        result["p"] = getattr(out, "p", None)
+        result["slope"] = getattr(out, "slope", None)
+        result["z"] = getattr(out, "z", None)
+        result["tau"] = getattr(out, "Tau", None)
+        p = result["p"]
+        result["significant"] = p is not None and p < alpha
+        if result["significant"]:
+            result["trend_direction"] = (
+                "significant increasing trend"
+                if result["trend"] == "increasing"
+                else "significant decreasing trend"
+                if result["trend"] == "decreasing"
+                else "significant trend"
+            )
+        else:
+            result["trend_direction"] = "no significant trend"
+    except Exception:
+        slope, _ = sens_slope(series)
+        result["slope"] = slope
+    return result
 
 
 def ita_summary_stats(
