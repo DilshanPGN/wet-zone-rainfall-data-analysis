@@ -6,6 +6,8 @@ export PNG/PDF, and AI Analysis section (rule-based interpretation).
 """
 from pathlib import Path
 from io import BytesIO
+import threading
+import time
 
 import streamlit as st
 
@@ -29,7 +31,7 @@ st.title("Innovative Trend Analysis (ITA)")
 st.caption("Wet zone rainfall data — select station, date range, and interval to view trends and export charts.")
 
 # -----------------------------------------------------------------------------
-# Load data once
+# Load data once (with progress bar)
 # -----------------------------------------------------------------------------
 @st.cache_data
 def get_df():
@@ -39,7 +41,12 @@ def get_df():
         st.error(str(e))
         return None
 
-df = get_df()
+progress_bar = st.progress(0, text="Loading data...")
+with st.spinner("Reading dataset..."):
+    df = get_df()
+progress_bar.progress(1.0, text="Data loaded.")
+progress_bar.empty()
+
 if df is None:
     st.stop()
 
@@ -93,15 +100,36 @@ with st.sidebar:
     )
 
 # -----------------------------------------------------------------------------
-# Run ITA
+# Run ITA (with filling progress bar while computing)
 # -----------------------------------------------------------------------------
-try:
-    series, first_half, second_half, summary, fig = run_ita(
-        df, station, int(year_min), int(year_max), interval
-    )
-except Exception as e:
-    st.error(f"ITA failed: {e}")
+compute_bar = st.progress(0, text=f"Computing trend analysis ({interval})...")
+ita_result = [None]
+ita_error = [None]
+
+def run_ita_thread():
+    try:
+        ita_result[0] = run_ita(
+            df, station, int(year_min), int(year_max), interval
+        )
+    except Exception as e:
+        ita_error[0] = e
+
+thread = threading.Thread(target=run_ita_thread)
+thread.start()
+p = 0
+while thread.is_alive():
+    p = min(p + 0.03, 0.92)
+    compute_bar.progress(p, text=f"Computing trend analysis ({interval})...")
+    time.sleep(0.08)
+thread.join()
+compute_bar.progress(1.0, text="Done.")
+time.sleep(0.2)
+compute_bar.empty()
+
+if ita_error[0] is not None:
+    st.error(f"ITA failed: {ita_error[0]}")
     st.stop()
+series, first_half, second_half, summary, fig = ita_result[0]
 
 if summary["n"] == 0:
     st.warning("No data in the selected range. Widen the year range or choose another station.")
