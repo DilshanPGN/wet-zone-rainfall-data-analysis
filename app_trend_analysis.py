@@ -143,6 +143,8 @@ if summary_full["n"] == 0:
 # -----------------------------------------------------------------------------
 if "ita_selection" not in st.session_state:
     st.session_state.ita_selection = None
+if "ita_chart_key" not in st.session_state:
+    st.session_state.ita_chart_key = 0
 
 # Plotly time series for box-select (drag to select a range)
 x_ts = list(range(len(series_full)))
@@ -170,7 +172,7 @@ fig_plotly.update_xaxes(rangeslider_visible=False)
 
 event = st.plotly_chart(
     fig_plotly,
-    key="ita_ts_select",
+    key=f"ita_ts_select_{st.session_state.ita_chart_key}",
     on_select="rerun",
     selection_mode=("box",),
     use_container_width=True,
@@ -183,9 +185,10 @@ if event and getattr(event, "selection", None):
     if indices:
         st.session_state.ita_selection = (min(indices), max(indices))
 
-# Reset button
+# Reset button (new chart key clears the drawn box on the Plotly chart)
 if st.button("Reset to full range", type="secondary"):
     st.session_state.ita_selection = None
+    st.session_state.ita_chart_key = (st.session_state.ita_chart_key + 1) % 10000
     st.rerun()
 
 # Use subset or full results
