@@ -178,6 +178,76 @@ def run_mann_kendall(series: pd.Series, alpha: float = 0.05) -> dict:
     return result
 
 
+def export_timeseries_trend_csv(
+    series: pd.Series,
+    summary: dict,
+    time_index_name: str = "time_index",
+) -> pd.DataFrame:
+    """
+    Build a DataFrame for CSV export: time index, rainfall (mm), Sen's trend line (mm).
+    Use for drawing your own time series + trend charts.
+    """
+    x = np.arange(len(series), dtype=float)
+    rainfall = series.values
+    slope = summary.get("sens_slope")
+    intercept = summary.get("sens_intercept")
+    if slope is not None and intercept is not None:
+        sens_trend = slope * x + intercept
+    else:
+        sens_trend = np.full_like(rainfall, np.nan)
+    df = pd.DataFrame({
+        time_index_name: series.index,
+        "rainfall_mm": rainfall,
+        "sens_trend_mm": sens_trend,
+    })
+    return df
+
+
+def export_ita_scatter_csv(
+    first_half: np.ndarray,
+    second_half: np.ndarray,
+) -> pd.DataFrame:
+    """
+    Build a DataFrame for CSV export: first half vs second half (ITA scatter).
+    Use for drawing your own ITA scatter (first_half_mm on x, second_half_mm on y).
+    """
+    n = min(len(first_half), len(second_half))
+    return pd.DataFrame({
+        "point_index": np.arange(1, n + 1, dtype=int),
+        "first_half_mm": first_half[:n],
+        "second_half_mm": second_half[:n],
+    })
+
+
+def export_trend_summary_csv(
+    summary: dict,
+    mk_result: dict,
+    station: str,
+    year_min: int,
+    year_max: int,
+    interval: str,
+) -> pd.DataFrame:
+    """
+    Build a one-row DataFrame with key trend statistics for CSV export.
+    """
+    return pd.DataFrame([{
+        "station": station,
+        "year_min": year_min,
+        "year_max": year_max,
+        "interval": interval,
+        "n_points": summary.get("n", 0),
+        "pct_above_1to1": summary.get("pct_above", 0),
+        "pct_below_1to1": summary.get("pct_below", 0),
+        "mean_change_mm": summary.get("mean_change", 0),
+        "sens_slope": summary.get("sens_slope"),
+        "sens_intercept": summary.get("sens_intercept"),
+        "mk_trend": mk_result.get("trend"),
+        "mk_p_value": mk_result.get("p"),
+        "mk_slope": mk_result.get("slope"),
+        "mk_significant": mk_result.get("significant"),
+    }])
+
+
 def ita_summary_stats(
     first_half: np.ndarray,
     second_half: np.ndarray,
@@ -237,69 +307,72 @@ def plot_ita(
     return fig
 
 
-def plot_ita_advanced(
+def plot_timeseries_trend_only(
     series: pd.Series,
+    summary: dict,
+    title_base: str,
+    step_label: str,
+) -> plt.Figure:
+    """
+    Single chart: Rainfall time series with Sen's trend line only.
+    """
+    fig, ax = plt.subplots(figsize=(10, 4.5))
+    fig.suptitle(title_base, fontsize=14, fontweight="bold", y=1.02)
+    slope = summary.get("sens_slope")
+    intercept = summary.get("sens_intercept")
+    x_ts = np.arange(len(series))
+    y_ts = series.values
+    ax.fill_between(x_ts, y_ts, alpha=0.3, color="steelblue")
+    ax.plot(x_ts, y_ts, color="steelblue", linewidth=0.8, label="Rainfall")
+    if slope is not None and intercept is not None and len(series) >= 2:
+        trend_line = slope * x_ts + intercept
+        ax.plot(x_ts, trend_line, color="coral", linewidth=2, linestyle="--", label=f"Sen's trend ({slope:.2f} {step_label})")
+    ax.set_ylabel("Rainfall (mm)", fontsize=11)
+    ax.set_xlabel(f"Time index ({step_label}s)", fontsize=11)
+    ax.set_title("Rainfall time series and trend", fontsize=12)
+    ax.legend(loc="upper right", fontsize=9)
+    ax.grid(True, alpha=0.4)
+    ax.set_xlim(0, len(series) - 1 if len(series) > 1 else 1)
+    fig.tight_layout()
+    return fig
+
+
+def plot_ita_scatter_only(
     first_half: np.ndarray,
     second_half: np.ndarray,
     summary: dict,
     title_base: str,
     xlabel_ita: str,
     ylabel_ita: str,
-    step_label: str,
 ) -> plt.Figure:
     """
-    Advanced two-panel chart for analysis:
-    - Top: time series of rainfall with Sen's trend line.
-    - Bottom: ITA scatter with points colored by increase/decrease, 1:1 line,
-      and statistics annotation box. Publication-ready styling.
+    Single chart: Innovative Trend Analysis (ITA) scatter only (first half vs second half, 1:1 line).
     """
-    fig, (ax_ts, ax_ita) = plt.subplots(2, 1, figsize=(10, 9), height_ratios=[1, 1.1])
+    fig, ax = plt.subplots(figsize=(6, 6))
     fig.suptitle(title_base, fontsize=14, fontweight="bold", y=1.02)
-
     n = min(len(first_half), len(second_half))
-    slope = summary.get("sens_slope")
-    intercept = summary.get("sens_intercept")
-
-    # ---- Panel 1: Time series ----
-    x_ts = np.arange(len(series))
-    y_ts = series.values
-    ax_ts.fill_between(x_ts, y_ts, alpha=0.3, color="steelblue")
-    ax_ts.plot(x_ts, y_ts, color="steelblue", linewidth=0.8, label="Rainfall")
-    if slope is not None and intercept is not None and len(series) >= 2:
-        trend_line = slope * x_ts + intercept
-        ax_ts.plot(x_ts, trend_line, color="coral", linewidth=2, linestyle="--", label=f"Sen's trend ({slope:.2f} {step_label})")
-    ax_ts.set_ylabel("Rainfall (mm)", fontsize=11)
-    ax_ts.set_xlabel(f"Time index ({step_label}s)", fontsize=11)
-    ax_ts.set_title("Rainfall time series and trend", fontsize=12)
-    ax_ts.legend(loc="upper right", fontsize=9)
-    ax_ts.grid(True, alpha=0.4)
-    ax_ts.set_xlim(0, len(series) - 1 if len(series) > 1 else 1)
-
-    # ---- Panel 2: ITA scatter with colored points ----
     if n > 0:
         x_ita, y_ita = first_half[:n], second_half[:n]
         above = y_ita > x_ita
         below = y_ita < x_ita
         on_line = np.logical_and(~above, ~below)
-        ax_ita.scatter(x_ita[above], y_ita[above], c="green", alpha=0.7, s=36, edgecolors="darkgreen", linewidths=0.6, label="Increase (above 1:1)", zorder=2)
-        ax_ita.scatter(x_ita[below], y_ita[below], c="red", alpha=0.7, s=36, edgecolors="darkred", linewidths=0.6, label="Decrease (below 1:1)", zorder=2)
+        ax.scatter(x_ita[above], y_ita[above], c="green", alpha=0.7, s=36, edgecolors="darkgreen", linewidths=0.6, label="Increase (above 1:1)", zorder=2)
+        ax.scatter(x_ita[below], y_ita[below], c="red", alpha=0.7, s=36, edgecolors="darkred", linewidths=0.6, label="Decrease (below 1:1)", zorder=2)
         if np.any(on_line):
-            ax_ita.scatter(x_ita[on_line], y_ita[on_line], c="gray", alpha=0.7, s=36, edgecolors="black", linewidths=0.6, label="No change", zorder=2)
+            ax.scatter(x_ita[on_line], y_ita[on_line], c="gray", alpha=0.7, s=36, edgecolors="black", linewidths=0.6, label="No change", zorder=2)
         lo = min(x_ita.min(), y_ita.min())
         hi = max(x_ita.max(), y_ita.max())
         margin = (hi - lo) * 0.06 if hi > lo else 1
         lo, hi = lo - margin, hi + margin
-        ax_ita.plot([lo, hi], [lo, hi], "k--", lw=2, label="1:1 line (no trend)", zorder=1)
-        ax_ita.set_xlim(lo, hi)
-        ax_ita.set_ylim(lo, hi)
-        ax_ita.set_xlabel(xlabel_ita + " (mm)", fontsize=11)
-        ax_ita.set_ylabel(ylabel_ita + " (mm)", fontsize=11)
-        ax_ita.set_title("Innovative Trend Analysis (ITA)", fontsize=12)
-        ax_ita.legend(loc="upper left", fontsize=9)
-        ax_ita.set_aspect("equal")
-        ax_ita.grid(True, alpha=0.4)
-
-        # Statistics box
+        ax.plot([lo, hi], [lo, hi], "k--", lw=2, label="1:1 line (no trend)", zorder=1)
+        ax.set_xlim(lo, hi)
+        ax.set_ylim(lo, hi)
+        ax.set_xlabel(xlabel_ita + " (mm)", fontsize=11)
+        ax.set_ylabel(ylabel_ita + " (mm)", fontsize=11)
+        ax.set_title("Innovative Trend Analysis (ITA)", fontsize=12)
+        ax.legend(loc="upper left", fontsize=9)
+        ax.set_aspect("equal")
+        ax.grid(True, alpha=0.4)
         pct_above = summary.get("pct_above", 0)
         pct_below = summary.get("pct_below", 0)
         mean_change = summary.get("mean_change", 0)
@@ -309,15 +382,33 @@ def plot_ita_advanced(
             f"Below 1:1: {pct_below:.1f}%\n"
             f"Mean change: {mean_change:.2f} mm"
         )
-        ax_ita.text(0.98, 0.02, stats_text, transform=ax_ita.transAxes, fontsize=9,
-                    verticalalignment="bottom", horizontalalignment="right",
-                    bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.9))
+        ax.text(0.98, 0.02, stats_text, transform=ax.transAxes, fontsize=9,
+                verticalalignment="bottom", horizontalalignment="right",
+                bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.9))
     else:
-        ax_ita.set_title("Innovative Trend Analysis (ITA)", fontsize=12)
-        ax_ita.text(0.5, 0.5, "Insufficient data", transform=ax_ita.transAxes, ha="center", va="center")
-
+        ax.set_title("Innovative Trend Analysis (ITA)", fontsize=12)
+        ax.text(0.5, 0.5, "Insufficient data", transform=ax.transAxes, ha="center", va="center")
     fig.tight_layout()
     return fig
+
+
+def plot_ita_advanced(
+    series: pd.Series,
+    first_half: np.ndarray,
+    second_half: np.ndarray,
+    summary: dict,
+    title_base: str,
+    xlabel_ita: str,
+    ylabel_ita: str,
+    step_label: str,
+) -> tuple[plt.Figure, plt.Figure]:
+    """
+    Build two separate figures: (1) Rainfall time series and trend, (2) ITA scatter.
+    Returns (fig_timeseries, fig_ita).
+    """
+    fig_ts = plot_timeseries_trend_only(series, summary, title_base, step_label)
+    fig_ita = plot_ita_scatter_only(first_half, second_half, summary, title_base, xlabel_ita, ylabel_ita)
+    return fig_ts, fig_ita
 
 
 def run_ita(
@@ -327,12 +418,13 @@ def run_ita(
     year_max: int,
     interval: Literal["annual", "monthly", "daily"],
     use_advanced_chart: bool = True,
-) -> tuple[pd.Series, np.ndarray, np.ndarray, dict, plt.Figure]:
+) -> tuple[pd.Series, np.ndarray, np.ndarray, dict, plt.Figure | None, plt.Figure]:
     """
     Run full ITA pipeline: get series, split, stats, plot.
 
-    Returns (series, first_half, second_half, summary_dict, figure).
-    If use_advanced_chart is True, returns a two-panel (time series + ITA) figure.
+    Returns (series, first_half, second_half, summary_dict, fig_timeseries, fig_ita).
+    When use_advanced_chart is True: two separate figures (time series + trend, ITA scatter).
+    When False: (None, single ITA figure).
     """
     series = get_series(df, station, year_min, year_max, interval)
     first_half, second_half = ita_split(series)
@@ -347,7 +439,7 @@ def run_ita(
     title_base = f"ITA — {station} ({year_min}–{year_max}, {interval})"
 
     if use_advanced_chart:
-        fig = plot_ita_advanced(
+        fig_ts, fig_ita = plot_ita_advanced(
             series=series,
             first_half=first_half,
             second_half=second_half,
@@ -357,15 +449,15 @@ def run_ita(
             ylabel_ita=ylabel_ita,
             step_label=step_label,
         )
-    else:
-        fig = plot_ita(
-            first_half,
-            second_half,
-            title=title_base,
-            xlabel=xlabel_ita,
-            ylabel=ylabel_ita,
-        )
-    return series, first_half, second_half, summary, fig
+        return series, first_half, second_half, summary, fig_ts, fig_ita
+    fig_ita = plot_ita(
+        first_half,
+        second_half,
+        title=title_base,
+        xlabel=xlabel_ita,
+        ylabel=ylabel_ita,
+    )
+    return series, first_half, second_half, summary, None, fig_ita
 
 
 def run_ita_from_series(
@@ -374,11 +466,11 @@ def run_ita_from_series(
     interval: Literal["annual", "monthly", "daily"],
     title_suffix: str = "selected range",
     use_advanced_chart: bool = True,
-) -> tuple[pd.Series, np.ndarray, np.ndarray, dict, plt.Figure]:
+) -> tuple[pd.Series, np.ndarray, np.ndarray, dict, plt.Figure | None, plt.Figure]:
     """
     Run ITA on an already-extracted series (e.g. a subset from box selection).
 
-    Returns (series, first_half, second_half, summary_dict, figure).
+    Returns (series, first_half, second_half, summary_dict, fig_timeseries, fig_ita).
     """
     series = series.dropna()
     if len(series) < 2:
@@ -386,12 +478,12 @@ def run_ita_from_series(
             "n": 0, "pct_above": 0.0, "pct_below": 0.0, "mean_change": 0.0,
             "sens_slope": None, "sens_intercept": None,
         }
-        fig = plot_ita_advanced(
+        fig_ts, fig_ita = plot_ita_advanced(
             series=series, first_half=np.array([]), second_half=np.array([]),
             summary=empty_summary, title_base="", xlabel_ita="", ylabel_ita="",
             step_label="step",
         )
-        return series, np.array([]), np.array([]), empty_summary, fig
+        return series, np.array([]), np.array([]), empty_summary, fig_ts, fig_ita
     first_half, second_half = ita_split(series)
     summary = ita_summary_stats(first_half, second_half)
     slope, intercept = sens_slope(series)
@@ -401,7 +493,7 @@ def run_ita_from_series(
     xlabel_ita = f"First half ({step_label})"
     ylabel_ita = f"Second half ({step_label})"
     title_base = f"ITA — {station} ({title_suffix}, {interval})"
-    fig = plot_ita_advanced(
+    fig_ts, fig_ita = plot_ita_advanced(
         series=series,
         first_half=first_half,
         second_half=second_half,
@@ -411,7 +503,7 @@ def run_ita_from_series(
         ylabel_ita=ylabel_ita,
         step_label=step_label,
     )
-    return series, first_half, second_half, summary, fig
+    return series, first_half, second_half, summary, fig_ts, fig_ita
 
 
 def mk_timeseries_plotly(
@@ -532,8 +624,12 @@ if __name__ == "__main__":
     year_min = int(df["Year"].min())
     year_max = int(df["Year"].max())
     station = RAINFALL_COLUMNS[0]
-    series, f, s, summary, fig = run_ita(df, station, year_min, year_max, "annual")
+    series, f, s, summary, fig_ts, fig_ita = run_ita(df, station, year_min, year_max, "annual")
     print("Summary:", summary)
-    fig.savefig("ita_demo.png", dpi=150)
-    plt.close(fig)
+    if fig_ts is not None:
+        fig_ts.savefig("ita_timeseries_trend.png", dpi=150)
+        plt.close(fig_ts)
+        print("Saved ita_timeseries_trend.png")
+    fig_ita.savefig("ita_demo.png", dpi=150)
+    plt.close(fig_ita)
     print("Saved ita_demo.png")
